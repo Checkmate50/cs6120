@@ -27,10 +27,8 @@ For programs involving loops or cycles, however, it should be possible to comput
 
 In this project, we explore implementing a static algorithm for computing the _exact_ state space distribution of probabilistic programs involving real polynomials.
 This algorithm was intended for implementation in `bril`, which restricts supported operations to arithmetic operations, conditions, and simple loops.
-We add the `random` command to bril, which returns a random double between `0` and `1`, and implement interval-based and convergence-based analysis for doubles in `xbrili`.
+We add the `rand` command to bril, which returns a random double between `0` and `1`, and implement interval-based and some convergence-based analysis for doubles in `xbrili`.
 We found that such a convergence algorithm was difficult to impelement, but still manage to recover some interval analysis based results for computing outer bounds on `bril` probabilistic state space.
-
-TODO: Fix above paragraph with correct implementation details
 
 # Background on Probabril
 
@@ -125,7 +123,6 @@ All spline polynomials are composed of uniform random variables distributed betw
 This does not imply, of course, that the spline is uniform or follows the same bounds.
 Consider, for instance, the following spline representation:
 
-<<<<<<< HEAD
 `[.5, 1.5] => r_0 + r_1`
 
 This spline has a triangular shape peaking at `1` between `.5` and `1.5`, but has the value `0` otherwise.
@@ -172,13 +169,6 @@ This conditioning is vital to tightening the intervals on complex random interac
 Despite a substantial amount of time spent on this problem, however, we were unable to make substantial progress and it remained unimplemented in any complete form.
 
 ## Polynomial Probabilities
-=======
-## With Splines
-
-As we have seen, intervals are only so precise. They work incredibly well for "axis-aligned"
-
-let's reconsider the full situation, in which you would like to track the exact densities of all of
->>>>>>> 400fa40d4d699a712b61258c7dd8d38cdc7c063c
 
 
 # Results
@@ -189,17 +179,17 @@ The programs chosent also reflect, somewhat accurately, the extent of the algori
 
 The exact intervals, done by hand, and calculated intervals, found by our algorithm, are listed in the table below:
 
-|Program|Exact Intervals|Calculated Intervals|
+|Program|Exact Final Polynomial|Calculated Final Polynomial|
 |---|---|---|---|
-|rand|\[0-1\] 100%|\[0-1\] 100%|
-|Complex|\[0-1\] 100%|\[0-1\] 0|1000s|
+|rand|\[0,1\] => r_0|\[0,1\] => r_0|
+|add-indep|\[-2,2\] => 2r_0^2 - 2r_0r_1|\[-2,2\] => 2r_0^2 - 2r_0r_1|
+|eventual|\[0,1\] => r_0|\[0,1\] => r_0|
+|conditional|\[0,.25\];\[.75,1.\] => r_0|\[0,1\] => r_0|
 
-Our basic interval algorithm clearly does not capture some of the intricacies of arithmetic operations on polynomials.
+Our basic interval algorithm clearly does not capture some of the intricacies of conditional operations with polynomials.
 However, this approach terminates very quickly, and can capture simple control flow without issue.
 It is worth noting that if our series convergence algorithm were finished, we expect it to calculate these intervals and associated probabilities exactly.
 We expect that such an algorithm would be substantially slower than an interval implementation, however.
-
-TODO: Collect the results I can
 
 # Conclusions and Future Work
 
@@ -207,5 +197,3 @@ While the approach of computing series convergence has more potential, polynomia
 Our initial approach has shown that intervals can be constructed as accurate but loose bounds around probabilistic state space.
 Theoretically, we have found that calculating convergence may require potentially catastrophic complexity; however, this is a realistic approach for small problems requiring exact solutions.
 We have also found `bril`, or any representation with simple control structure, to be a good target for such analysis, and implemented the basics of what such an algorithm may eventually work from.
-
-TODO: Fix up based on theory results.
