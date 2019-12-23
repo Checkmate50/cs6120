@@ -21,17 +21,6 @@ link = "https://www.cs.cornell.edu/~dgeisler"
 
 # Introduction
 
-Probabilistic programming relies on our ability to evaluate the probability distribution of a program involving random number generation and selection.
-Most current solutions for calculating these distrubutions rely on sampling the program repeatedly, recording results, and perhaps inferring some approximate convergence.
-For programs involving loops or cycles, however, it should be possible to compute the infinite series convergence directly.
-
-In this project, we explore implementing a static algorithm for computing the _exact_ state space distribution of probabilistic programs involving real polynomials.
-This algorithm was intended for implementation in `bril`, which restricts supported operations to arithmetic operations, conditions, and simple loops.
-We add the `rand` command to bril, which returns a random double between `0` and `1`, and implement interval-based and some convergence-based analysis for doubles in `xbrili`.
-We found that such a convergence algorithm was difficult to impelement, but still manage to recover some interval analysis based results for computing outer bounds on `bril` probabilistic state space.
-
-# Background on Probabril
-
 In [a previous adventure](probabril) we laid out an exact solver for the distribution represented by probabilistic Bril programs, but in this setting the only source of randomness is a coin flip, which gives all distributions discrete, finite support. In our exact abstract interpreter, we thought of a coin flip as a world split.
 Of course, in most languages, the standard is to give people access to a `rand` instruction, a uniform sample from [0,1], rather than a coin. Analogous to our motivating example before, we would like to run programs such as
 
@@ -53,25 +42,35 @@ main {
 
 Our original technique would work here too, if it were reasonable to split into a separate world with its own environment for each of the $2^{32}$ different values that a 32-bit float could take, but alas it is not. Paying that cost once would already be hard to stomach, but doing it every time we wanted access to randomness is too much, and besides, most of these environments would be copies of one another.
 
-This is one of several optimizations that can be enabled by representing many related outcomes with ranges or densities. Densities, of course, subsume ranges, but are much trickier to get right; we decided to try both.
+It is much cheaper to instead lazily avoid splitting into worlds until we have to branch, and just keep track of the support, and conditional distributions of all variables given that we are where we are. Densities, of course, subsume ranges, but are much trickier to get right; we decided to try our hand at both in parallel.
 
-It is much cheaper to instead lazily avoid splitting into worlds until we have to branch, and just keep track of the conditional distributions of all variables given that we are where we are.
-The purpose of this assignment was to do an optimization of some kind.
+In this project, we explore implementing a static algorithm for computing the _exact_ state space distribution of probabilistic programs involving real polynomials, which we had planned to use for optimizations (more below).
+This algorithm was intended for implementation in `bril`, which restricts supported operations to arithmetic operations, conditions, and simple loops.
+We add the `rand` command to bril, which returns a random double between `0` and `1`, and implement interval-based and some convergence-based analysis for doubles in `xbrili`.
+
+Getting the representation right is much tricker than we had first imagined, but we still manage to recover some interval analysis based results for computing outer bounds on `bril` probabilistic state space.
 
 
 [probabril]: https://www.cs.cornell.edu/courses/cs6120/2019fa/blog/probabril/
 [float-bril]: https://www.cs.cornell.edu/courses/cs6120/2019fa/blog/floats-static-arrays/
 
+## Enabling Optimizations
+
+The much reduced memory foot-print from flipping coins is one of several optimizations that are made possible by representing continuous outcomes with ranges or densities. Had this project been done more directedly, and perhaps in the future, we will be able to do others; the following are also possible:
+
+- Dead Code Elimination
+- Distribution Folding: re-representing probabilistic programs in terms of fewer random calls, and asking for the resulting distribution directly.
+
 # A New Abstract Interpreter
 
-Oli TODO (I'm thinking background stuff here.  The headers are dumb, you can merge with the previous section however you want.  Could add some ranty stuff here about how the theory was hard.)
+Our new abstract interpreter consists not just of a set of possible worlds, but also interprets values themselves abstractly. We expose both bounds for float variables (which may depend on others), as well as densities (which almost certainly will as well). The job of this new interpreter is considerably more difficult than the old one: in addition to everything it did before, it needs to be able to calculate the areas and intersections of the interiors of arbitrary high-dimensional smooth surfaces.
 
-## The Operations
+The job gets considerably easier if we restrict it to linear combinations of random variables, which generate polytopes---for this reason, we rule out multiplication of stochastic variables.
 
 ### Random
 
 Ironically, those things that were the most difficult before, are considerably easier.
-To interpret a `rand` instruction, we need only
+To interpret a `rand` instruction, we need only to assign it to a fresh unit interval with uniform density.
 
 ### Adding and Multiplying Numbers
 
@@ -83,10 +82,7 @@ y := rand
 z := x + y
 ```
 
-The distribution on `x` and `y` are uniform; What is the distribution on `z`? Its density is a triangle distribution:
-
-![a]()
-
+The distribution on `x` and `y` are uniform; What is the distribution on `z`? Its density is a [triang(le|ular) distribution](https://en.wikipedia.org/wiki/Triangular_distribution).
 In general, the density of two random variables must be convolved: if $f_X(x)$ is the density of $X$, and $f_Y(y)$ is the density of y, and the two are independent, then the variable $Z = X + Y$ can take the value $z$ only if there is some event $X = x$ occuring simultaneously with $Y = z-x$, for any value of $x$. Correspondingly, the density $f_Z$ is therefore given by:
 
 $$ f_Z(z) = \int_{-\infty}^\infty f_X(x) f_Y(z-x) \mathrm{d}x $$
@@ -95,15 +91,20 @@ Similarly, for $Z = XY$, the density at $z$ is given by:
 
 $$ f_Z(z) = \int_{-\infty}^\infty f_X(x) f_Y(z/x) \frac{1}{|x|} \mathrm{d}x $$
 
-This means that abstractly interpreting distributions of floats made out of uniform distributions
+This means that to calculate the density of a variable resulting from an arithmetic operation, we have to convolve the densities of the variables. As we are beginning with uniform distributions, which have interval support, the convolutions will have edges, making them splines.
 
 ### Branching
 
-Branching, like randomness, is one of the major sources of problems, but it turns out that we will need to do the difficult work before we ever get to the branch. We can implement control structures straightforwardly, but
+Branching, like randomness, is one of the major sources of problems, but it turns out that we will need to do the difficult work before we ever get to the branch. We can implement control structures themselves with no trouble whatsoever, but there is of course a heavy price to pay: we shift the entire burden onto the comparison operators.
 
 ### Comparisons
 
-The most difficult part of the entire endeavor is interpreting the comparison between two floats.
+The most difficult part of the entire endeavor is interpreting the comparison between two floats. The reason for this is this is truly the place where we need to branch and condition.
+
+In the case where all traces of the program have the same set of calls to `rand`, we can think of the space of all possible random behaviors from the program as generating a hyper-cube.
+When we use a comparison operator such as `flt` and save the result in a boolean, we need to know the probability that it is true or false---that is, we need to estimate the volume of the polytope obtained by the intersection of the one that is currently possible given the control flow, and the one that separates one outcome of the test from the other.
+
+Calculating the volume of a polytope from its faces is #P-complete, and so this is not a cheap operation. Moreover, we then need to associate the resulting value to the right fragments of the polytope: this is where we split the environments, and is the instruction that is most like the `flip` instruction from plain probabril.
 
 
 # Implementation
@@ -168,8 +169,13 @@ As conditions are applied on polynomials dependent on other random variables, it
 This conditioning is vital to tightening the intervals on complex random interactions.
 Despite a substantial amount of time spent on this problem, however, we were unable to make substantial progress and it remained unimplemented in any complete form.
 
-## Polynomial Probabilities
+## Spline Densities
 
+In order to represent densities such as the triangle distribution given in the example, or really any [Irwin Hall Distribution](https://en.wikipedia.org/wiki/Irwin%E2%80%93Hall_distribution), obtained by adding `rand` to itself any number of times, it is necessary to represent the demnsities as splines. As discussed above, this involves convolving windowed polynomials with one another, and for this we have implemented a [spline library](https://github.com/orichardson/bril/blob/interval/bril-ts/spline.ts).
+
+The tricky part of this is the multi-dimensional case. While convolving 1D splines is reasonable (though not exactly straightforward when you have to write the library yourself), sometimes we will need to integrate things with unbound variables and keep them separate to deal with the multi-dimensional case. Worse, sometimes you will have to integrate across arbitrary curves.
+
+As much as we like line integrals, we restrict our programs to addition and multiplication by scalars to avoid this.
 
 # Results
 
@@ -180,11 +186,11 @@ The programs chosent also reflect, somewhat accurately, the extent of the algori
 The exact intervals, done by hand, and calculated intervals, found by our algorithm, are listed in the table below:
 
 |Program|Exact Final Polynomial|Calculated Final Polynomial|
-|---|---|---|---|
-|rand|\[0,1\] => r_0|\[0,1\] => r_0|
-|add-indep|\[-2,2\] => 2r_0^2 - 2r_0r_1|\[-2,2\] => 2r_0^2 - 2r_0r_1|
-|eventual|\[0,1\] => r_0|\[0,1\] => r_0|
-|conditional|\[0,.25\];\[.75,1.\] => r_0|\[0,1\] => r_0|
+|---|---|---|
+|rand| $\[0,1\] \Rightarrow r_0$ | $\[0,1\] \Rightarrow r_0$ |
+|add-indep| $\[-2,2\] \Rightarrow 2r_0^2 - 2r_0r_1$ | $\[-2,2\] \Rightarrow 2r_0^2 - 2r_0r_1$ |
+|eventual| $\[0,1\] \Rightarrow r_0$ | $\[0,1\] \Rightarrow r_0$ |
+|conditional| $\[0,.25\];\[.75,1.\] \Rightarrow r_0$ | $\[0,1\] \Rightarrow r_0$ |
 
 Our basic interval algorithm clearly does not capture some of the intricacies of conditional operations with polynomials.
 However, this approach terminates very quickly, and can capture simple control flow without issue.
