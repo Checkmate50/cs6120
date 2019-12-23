@@ -34,8 +34,8 @@ TODO: Fix above paragraph with correct implementation details
 
 # Background on Probabril
 
-In [our last adventure](probabril) we laid out an exact solver for the distribution represented by probabilistic Bril programs, but in this setting the only source of randomness is a coin flip, which gives all distributions discrete, finite support. In our exact abstract interpreter, we thought of a coin flip as a world split.
-Of course, in real languages, the standard is to give people access to a `rand` instruction, a uniform sample from [0,1]. Analogous to our motivating example before, we would like to run programs such as
+In [a previous adventure](probabril) we laid out an exact solver for the distribution represented by probabilistic Bril programs, but in this setting the only source of randomness is a coin flip, which gives all distributions discrete, finite support. In our exact abstract interpreter, we thought of a coin flip as a world split.
+Of course, in most languages, the standard is to give people access to a `rand` instruction, a uniform sample from [0,1], rather than a coin. Analogous to our motivating example before, we would like to run programs such as
 
 ```
 main {
@@ -53,18 +53,60 @@ main {
   }
 ```
 
-Our original technique would work here too, if it were reasonable to split into a separate world with its own environment for each of the $2^32$ different values that a 32-bit float could take, but alas it is not. Paying that cost once would already be hard to stomach, but doing it every time we wanted access to randomness would be a bit much.
+Our original technique would work here too, if it were reasonable to split into a separate world with its own environment for each of the $2^{32}$ different values that a 32-bit float could take, but alas it is not. Paying that cost once would already be hard to stomach, but doing it every time we wanted access to randomness is too much, and besides, most of these environments would be copies of one another.
 
-Instead, we can lazily avoid splitting into worlds until we have to branch and split the environment or control flow.
+This is one of several optimizations that can be enabled by representing many related outcomes with ranges or densities. Densities, of course, subsume ranges, but are much trickier to get right; we decided to try both.
+
+It is much cheaper to instead lazily avoid splitting into worlds until we have to branch, and just keep track of the conditional distributions of all variables given that we are where we are.
+The purpose of this assignment was to do an optimization of some kind.
+
 
 [probabril]: https://www.cs.cornell.edu/courses/cs6120/2019fa/blog/probabril/
 [float-bril]: https://www.cs.cornell.edu/courses/cs6120/2019fa/blog/floats-static-arrays/
 
-Oli TODO (Can be mostly copied from p1 I expect)
-
-# The Problem of Reals
+# A New Abstract Interpreter
 
 Oli TODO (I'm thinking background stuff here.  The headers are dumb, you can merge with the previous section however you want.  Could add some ranty stuff here about how the theory was hard.)
+
+## The Operations
+
+### Random
+
+Ironically, those things that were the most difficult before, are considerably easier.
+To interpret a `rand` instruction, we need only
+
+### Adding and Multiplying Numbers
+
+Consider the following program:
+
+```
+x := rand
+y := rand
+z := x + y
+```
+
+The distribution on `x` and `y` are uniform; What is the distribution on `z`? Its density is a triangle distribution:
+
+![a]()
+
+In general, the density of two random variables must be convolved: if $f_X(x)$ is the density of $X$, and $f_Y(y)$ is the density of y, and the two are independent, then the variable $Z = X + Y$ can take the value $z$ only if there is some event $X = x$ occuring simultaneously with $Y = z-x$, for any value of $x$. Correspondingly, the density $f_Z$ is therefore given by:
+
+$$ f_Z(z) = \int_{-\infty}^\infty f_X(x) f_Y(z-x) \mathrm{d}x $$
+
+Similarly, for $Z = XY$, the density at $z$ is given by:
+
+$$ f_Z(z) = \int_{-\infty}^\infty f_X(x) f_Y(z/x) \frac{1}{|x|} \mathrm{d}x $$
+
+This means that abstractly interpreting distributions of floats made out of uniform distributions
+
+### Branching
+
+Branching, like randomness, is one of the major sources of problems, but it turns out that we will need to do the difficult work before we ever get to the branch. We can implement control structures straightforwardly, but
+
+### Comparisons
+
+The most difficult part of the entire endeavor is interpreting the comparison between two floats.
+
 
 # Implementation
 
@@ -83,6 +125,7 @@ All spline polynomials are composed of uniform random variables distributed betw
 This does not imply, of course, that the spline is uniform or follows the same bounds.
 Consider, for instance, the following spline representation:
 
+<<<<<<< HEAD
 `[.5, 1.5] => r_0 + r_1`
 
 This spline has a triangular shape peaking at `1` between `.5` and `1.5`, but has the value `0` otherwise.
@@ -129,8 +172,14 @@ This conditioning is vital to tightening the intervals on complex random interac
 Despite a substantial amount of time spent on this problem, however, we were unable to make substantial progress and it remained unimplemented in any complete form.
 
 ## Polynomial Probabilities
+=======
+## With Splines
 
-Oli TODO (I might be using the wrong title for this section)
+As we have seen, intervals are only so precise. They work incredibly well for "axis-aligned"
+
+let's reconsider the full situation, in which you would like to track the exact densities of all of
+>>>>>>> 400fa40d4d699a712b61258c7dd8d38cdc7c063c
+
 
 # Results
 
@@ -152,7 +201,7 @@ We expect that such an algorithm would be substantially slower than an interval 
 
 TODO: Collect the results I can
 
-# Conclusion
+# Conclusions and Future Work
 
 While the approach of computing series convergence has more potential, polynomial structure appears difficult enough to reason about that such that such a solution will require substantially more work.
 Our initial approach has shown that intervals can be constructed as accurate but loose bounds around probabilistic state space.
