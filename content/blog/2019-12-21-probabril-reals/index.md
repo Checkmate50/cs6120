@@ -68,13 +68,67 @@ Oli TODO (I'm thinking background stuff here.  The headers are dumb, you can mer
 
 # Implementation
 
+To explore the potential of exact probabilistic analysis, we focused our implementation in solving two related problems.
+The first of these was to use interval analysis to give (potentially loose) bounds for each state.
+The second problem was to calculate the probability of each of these bounds through integration and calculating the convergence of a series of probabilistic calculations.
 
+Ultimately, our implementation resulted in fairly loose intervals due to issues with tightining the interval analysis calculation.
+Additionally, our probability analysis ran into difficulties with analytically integrating arbitrary polynomial distributions; despite some initial promising results, solving this integration seems expensive in general.
 
-## Interval Analysis Approach
+## Interval Analysis
 
-Dietrich TODO
+Our treatment of random state intervals relies on treating each probibility state as a [spline](https://en.wikipedia.org/wiki/Spline_(mathematics)).
+This representation can be summarized as each interval having an associated polynomial of random variables.
+All spline polynomials are composed of uniform random variables distributed between `0` and `1` to mimic the behavior of the `rand` operation.
+This does not imply, of course, that the spline is uniform or follows the same bounds.
+Consider, for instance, the following spline representation:
 
-## Polynomial Approach
+`[.5, 1.5] => r_0 + r_1`
+
+This spline has a triangular shape peaking at `1` between `.5` and `1.5`, but has the value `0` otherwise.
+We represent each variable composing a spline as `r_0, r_1, ...`, where each random variable is distinguished only to be independent from all other created variables.
+
+We support spline addition, subtraction, and multiplication.
+Spline polynomials are operated on as expected.
+Spline intervals over these operations, however, are a bit more complicated.
+
+The baseline approach implemented is to simply take the smallest interval containing the operating intervals; with addition, for instance, the interval of the two polynomials is the minimum to the maximum of each pairwise addition of their intervals.
+For this analysis, constants are have exact intervals which contain only the constant value.
+For example, consider the following addition:
+
+`(rand + 2.) + (rand - 1.)`
+
+The intervals computation can then be written as follows:
+
+```
+([0., 1.] + [2., 2.]) + ([0., 1.] - [1., 1.])
+= [2., 3.] + [-1., 0.]
+= [min(2. - 1., 2 + 0., 3. - 1., 3 + 0.), max(2. - 1., 2 + 0., 3. - 1., 3 + 0.)]
+= [min(1., 2., 2., 3.), max(1., 2., 2., 3.)]
+= [1., 3.]
+```
+
+This baseline approach can be extended by reasoning about conditional branches.
+Branches introduce two major issues: _splits_ and _polynomial conditioning_.
+
+Conditions can be restricted without loss of generality to the `lt` operation, which cuts off the interval at the comparing point or interval.
+The case of point cutoff introduces our first issue of interval splitting.
+Suppose we introduce the two conditions to a random variable `x = rand`: `x > .75` and `x < .25`.
+The interval for `x` must split to become the spline `[0., .25]; [.75, 1.] => r_0`.
+
+This splitting introduces issues when applied to our basic interval analysis above.
+First, we must apply the interval operation to each _pair_ of intervals, causing an explosion of complexity to splines including splits.
+Second, we should merge intervals which overlap to avoid inconsistencies
+
+This splitting of intervals introduces substantial additional complexity beyond our baseline design, and so are not included in the submitted version.
+Extending these intervals to reason about splits would be the first step in making our implementation more precise (and would likely not negatively impact performance).
+
+The second issue introduced is polynomial conditioning.
+As conditions are applied on polynomials dependent on other random variables, it is possible to infer information based on the conditions and those dependencies.
+This conditioning is vital to tightening the intervals on complex random interactions.
+Despite a substantial amount of time spent on this problem, however, we were unable to make substantial progress and it remained unimplemented in any complete form.
+
+## Polynomial Probabilities
 
 Oli TODO (I might be using the wrong title for this section)
 
@@ -83,14 +137,12 @@ Oli TODO (I might be using the wrong title for this section)
 We evaluated our implementation on a series of minimal programs.  
 These programs were selected both for using only the operations supported by our probabilistic analysis and for being simple enough to compute exact state probabilities by hand.
 The programs chosent also reflect, somewhat accurately, the extent of the algorithm we managed to get working.
-All programs were run on a Dell XPS 13 with an Intel I5-8250U CPU, 16 GB RAM, and WSL for Windows 10.
 
-The intervals and runtimes for our algorithm are listed in the table below:
+The exact intervals, done by hand, and calculated intervals, found by our algorithm, are listed in the table below:
 
-|Program|Exact Intervals|Calculated Intervals|Runtime|
+|Program|Exact Intervals|Calculated Intervals|
 |---|---|---|---|
-|Simple|\[1-2\] 100%|\[1-2\] 100%|100s|
-||\[2-3\] 50%|\[2-4\] 50%||
+|rand|\[0-1\] 100%|\[0-1\] 100%|
 |Complex|\[0-1\] 100%|\[0-1\] 0|1000s|
 
 Our basic interval algorithm clearly does not capture some of the intricacies of arithmetic operations on polynomials.
